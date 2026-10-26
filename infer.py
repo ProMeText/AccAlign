@@ -65,6 +65,12 @@ def align(align_layer,
 		  infer_data_file_src='',
 		  infer_data_file_tgt='',
 		  output_dir_adapter='',
+		  # Connexion des composants
+		  use_components=True,
+		  component_min_edge=0.01,
+		  component_threshold=0.08,
+		  component_exclude_1to1=False,
+		  component_output='infer_output/components/',
 		  infer_path='infer_output/',
 		  model_name_or_path=None,
 		  adapter_path=None,
@@ -176,8 +182,30 @@ def align(align_layer,
 		folder_path = infer_path
 		if not os.path.exists(folder_path):
 			os.makedirs(folder_path)
-		alignments = word_align(align_layer, device, keep_layer, extraction, softmax_threshold, per_gpu_eval_batch_size, tokenizer, model, folder_path, infer_data_file_src,
-				   infer_data_file_tgt)
+		if use_components:
+			# Créer un namespace args pour ComponentAligner
+			class Args:
+				pass
+
+			comp_args = Args()
+			comp_args.align_layer = align_layer
+			comp_args.extraction = extraction
+			comp_args.softmax_threshold = softmax_threshold
+			comp_args.component_min_edge = component_min_edge
+			comp_args.component_threshold = component_threshold
+			comp_args.component_exclude_1to1 = component_exclude_1to1
+			comp_args.device = device
+
+			from aligner.sent_aligner import word_align_components
+			word_align_components(
+				comp_args, tokenizer, model,
+				component_output if component_output else folder_path,
+				infer_data_file_src, infer_data_file_tgt
+			)
+		else:
+			alignments = word_align(align_layer=align_layer, device=device, keep_layer=keep_layer, extraction=extraction, softmax_threshold=softmax_threshold,
+					   per_gpu_train_batch_size=per_gpu_eval_batch_size, tokenizer=tokenizer, model=model, folder_path=folder_path,
+					   src_path=infer_data_file_src, tgt_path=infer_data_file_tgt)
 		return alignments
 
 
@@ -235,9 +263,10 @@ if __name__ == "__main__":
 	json_to_txt()
 	src = 'data/tests/source.txt'
 	tgt = 'data/tests/target.txt'
-	src = 'data/lancelot/source.txt'
-	tgt = 'data/lancelot/target.txt'
-	for threshold in [0.001, 0.002, 0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.009, 0.01, 0.5]:
+	# src = 'data/lancelot/source.txt'
+	# tgt = 'data/lancelot/target.txt'
+	for threshold in [0.005]:
+	#for threshold in [0.001, 0.002, 0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.009, 0.01, 0.5]:
 	#for threshold in [0.001, 0.002, 0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.009, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99, 1.0]:
 		alignments = align(
 			eval_data_file_src='',
@@ -248,6 +277,8 @@ if __name__ == "__main__":
 			model_name_or_path="models/model_labse_bibles_clean/",
 			# model_name_or_path="LaBSE/",
 			adapter_path="checkpoint-adapter/",
+			# adapter_path=None,
+			use_components=True,
 			tokenizer_name=None,
 			cache_dir=None,
 			keep_layer=6,

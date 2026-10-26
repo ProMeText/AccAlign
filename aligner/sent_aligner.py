@@ -145,3 +145,67 @@ def word_align(align_layer, device, keep_layer ,extraction, softmax_threshold, p
         if str(keep_layer) == str(layer_id):
             corresponding_dict = word_aligns_list_all_layer_dic[layer_id]
     return corresponding_dict
+
+
+from aligner.word_align import ComponentAligner
+
+def word_align_components(args, tokenizer, model, folder_path, src_path, tgt_path):
+    """
+    Extraction d'alignements par composantes connexes.
+    Format de sortie : mots_src ||| mots_tgt ||| score ||| type
+    où type = '1:1', 'n:1', '1:m', 'n:m'
+    """
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    def collate(examples):
+        ids_src, ids_tgt, bpe2word_map_src, bpe2word_map_tgt, sents_src, sents_tgt = zip(*examples)
+        ids_src = pad_sequence(ids_src, batch_first=True, padding_value=tokenizer.pad_token_id)
+        ids_tgt = pad_sequence(ids_tgt, batch_first=True, padding_value=tokenizer.pad_token_id)
+        return ids_src, ids_tgt, bpe2word_map_src, bpe2word_map_tgt, sents_src, sents_tgt
+
+    dataset = LineByLineTextDataset(tokenizer, file_path_src=src_path, file_path_tgt=tgt_path)
+    dataloader = DataLoader(dataset, batch_size=1, collate_fn=collate)
+
+    aligner = ComponentAligner(args, model)
+    model.eval()
+
+    os.makedirs(folder_path, exist_ok=True)
+    output_file = os.path.join(folder_path, 'XX2XX.components_align')
+
+    with open(output_file, 'w', encoding='utf-8') as f_out:
+        for batch in tqdm(dataloader, desc="Component alignment"):
+            with torch.no_grad():
+                ids_src, ids_tgt, b2w_src_b, b2w_tgt_b, sents_src, sents_tgt = batch
+                ids_src = ids_src.to(device)
+                ids_tgt = ids_tgt.to(device)
+
+                # batch_size=1, donc on prend l'index 0
+                b2w_src = b2w_src_b[0]
+                b2w_tgt = b2w_tgt_b[0]
+                sent_src = sents_src[0]
+                sent_tgt = sents_tgt[0]
+
+                # Lancer l'alignement
+                blocks = aligner.align_sentence_pair(
+                    args, ids_src[0], ids_tgt[0], b2w_src, b2w_tgt,
+                    tokenizer.pad_token_id, tokenizer.cls_token_id, tokenizer.sep_token_id
+                )
+
+                # Écrire les résultats
+                for src_words, tgt_words, score in blocks:
+                    # Récupérer les vrais mots
+                    src_str = ' '.join(sent_src[w] for w in src_words if w < len(sent_src))
+                    tgt_str = ' '.join(sent_tgt[w] for w in tgt_words if w < len(sent_tgt))
+
+                    # Type d'alignement
+                    n, m = len(src_words), len(tgt_words)
+                    if n == 1 and m == 1:
+                        align_type = '1:1'
+                    elif n == 1:
+                        align_type = '1:m'
+                    elif m == 1:
+                        align_type = 'n:1'
+                    else:
+                        align_type = 'n:m'
+
+                    f_out.write(f"{src_str} ||| {tgt_str} ||| {score:.4f} ||| {align_type}\n")
