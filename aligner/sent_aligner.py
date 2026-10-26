@@ -96,7 +96,8 @@ class LineByLineTextDataset(IterableDataset):
 
 
 
-def word_align(align_layer, device, keep_layer ,extraction, softmax_threshold, per_gpu_train_batch_size, tokenizer, model, folder_path, src_path, tgt_path):
+def word_align(align_layer, device, keep_layer ,extraction, softmax_threshold, per_gpu_train_batch_size, tokenizer, model, folder_path, src_path, tgt_path,
+               output_prob=True):
 
     device = torch.device(device)
     def collate(examples):
@@ -123,27 +124,42 @@ def word_align(align_layer, device, keep_layer ,extraction, softmax_threshold, p
 
 
             ids_src, ids_tgt = ids_src.to(device), ids_tgt.to(device)
-            word_aligns_list_all_layer_dic_one_batch = model_sentence.get_aligned_word(align_layer, extraction, softmax_threshold, ids_src, ids_tgt, bpe2word_map_src, bpe2word_map_tgt, tokenizer.pad_token_id, tokenizer.cls_token_id, tokenizer.sep_token_id, output_prob = False)
-
+            word_aligns_list_all_layer_dic_one_batch = model_sentence.get_aligned_word(align_layer,
+                                                                                       extraction,
+                                                                                       softmax_threshold,
+                                                                                       ids_src,
+                                                                                       ids_tgt,
+                                                                                       bpe2word_map_src,
+                                                                                       bpe2word_map_tgt,
+                                                                                       tokenizer.pad_token_id,
+                                                                                       tokenizer.cls_token_id,
+                                                                                       tokenizer.sep_token_id,
+                                                                                       output_prob = True)
             for layer_id in word_aligns_list_all_layer_dic_one_batch:
-
                 if layer_id not in word_aligns_list_all_layer_dic:
                     word_aligns_list_all_layer_dic[layer_id] = word_aligns_list_all_layer_dic_one_batch[layer_id]
                 else:
                     word_aligns_list_all_layer_dic[layer_id] = word_aligns_list_all_layer_dic[layer_id] + word_aligns_list_all_layer_dic_one_batch[layer_id]
 
 
-    # On extrait toutes les couches pour le txt mais on retourne seulement celle visée.
-    for layer_id in word_aligns_list_all_layer_dic:
-        with open(os.path.join(folder_path, f'{"XX2XX.align"}.{str(layer_id)}'),'w', encoding='utf-8') as writers:
-            for word_aligns in word_aligns_list_all_layer_dic[layer_id]:
-                output_str = []
-                for word_align in word_aligns:
-                    if word_align[0] != -1:
-                        output_str.append(f'{word_align[0]}-{word_align[1]}')
-                writers.write(' '.join(output_str) + '\n')
-        if str(keep_layer) == str(layer_id):
-            corresponding_dict = word_aligns_list_all_layer_dic[layer_id]
+            # On extrait toutes les couches pour le txt mais on retourne seulement celle visée.
+            for layer_id in word_aligns_list_all_layer_dic:
+                with open(os.path.join(folder_path, f'{"XX2XX.align"}.{str(layer_id)}'), 'w', encoding='utf-8') as writers:
+                    for word_aligns in word_aligns_list_all_layer_dic[layer_id]:
+                        output_str = []
+                        if output_prob:
+                            # word_aligns est un dict {(src, tgt): prob}
+                            for (src_idx, tgt_idx), prob in word_aligns.items():
+                                if src_idx != -1:
+                                    output_str.append(f'{src_idx}-{tgt_idx}:{prob:.4f}')
+                        else:
+                            # word_aligns est un set de tuples (src, tgt)
+                            for word_align in word_aligns:
+                                if word_align[0] != -1:
+                                    output_str.append(f'{word_align[0]}-{word_align[1]}')
+                        writers.write(' '.join(output_str) + '\n')
+                if str(keep_layer) == str(layer_id):
+                    corresponding_dict = word_aligns_list_all_layer_dic[layer_id]
     return corresponding_dict
 
 
@@ -155,7 +171,7 @@ def word_align_components(args, tokenizer, model, folder_path, src_path, tgt_pat
     Format de sortie : mots_src ||| mots_tgt ||| score ||| type
     où type = '1:1', 'n:1', '1:m', 'n:m'
     """
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device(args.device)
 
     def collate(examples):
         ids_src, ids_tgt, bpe2word_map_src, bpe2word_map_tgt, sents_src, sents_tgt = zip(*examples)
@@ -168,6 +184,7 @@ def word_align_components(args, tokenizer, model, folder_path, src_path, tgt_pat
 
     aligner = ComponentAligner(args, model)
     model.eval()
+
 
     os.makedirs(folder_path, exist_ok=True)
     output_file = os.path.join(folder_path, 'XX2XX.components_align')
@@ -207,5 +224,4 @@ def word_align_components(args, tokenizer, model, folder_path, src_path, tgt_pat
                         align_type = 'n:1'
                     else:
                         align_type = 'n:m'
-
                     f_out.write(f"{src_str} ||| {tgt_str} ||| {score:.4f} ||| {align_type}\n")

@@ -178,7 +178,6 @@ def align(align_layer,
 		model = modelforALING(config, labse_model)
 		model.to(device)
 
-		# folder_path= os.path.join(infer_path, f'{}2{}' + '_steps')
 		folder_path = infer_path
 		if not os.path.exists(folder_path):
 			os.makedirs(folder_path)
@@ -190,9 +189,12 @@ def align(align_layer,
 			comp_args = Args()
 			comp_args.align_layer = align_layer
 			comp_args.extraction = extraction
-			comp_args.softmax_threshold = softmax_threshold
+			comp_args.device = device
 			comp_args.component_min_edge = component_min_edge
+			comp_args.component_min_edge = 0.35
 			comp_args.component_threshold = component_threshold
+			comp_args.component_threshold = 0.0
+			comp_args.max_ngram = 6
 			comp_args.component_exclude_1to1 = component_exclude_1to1
 			comp_args.device = device
 
@@ -205,7 +207,7 @@ def align(align_layer,
 		else:
 			alignments = word_align(align_layer=align_layer, device=device, keep_layer=keep_layer, extraction=extraction, softmax_threshold=softmax_threshold,
 					   per_gpu_train_batch_size=per_gpu_eval_batch_size, tokenizer=tokenizer, model=model, folder_path=folder_path,
-					   src_path=infer_data_file_src, tgt_path=infer_data_file_tgt)
+					   src_path=infer_data_file_src, tgt_path=infer_data_file_tgt, output_prob=True)
 		return alignments
 
 
@@ -224,13 +226,13 @@ def visualize(alignments, src, tgt, output_file):
 			if i < len(alignments):
 				# Convertir les alignements en paires de mots
 				align_pairs = alignments[i]
-				for pair in align_pairs:
+				for pair, probs in align_pairs.items():
 					src_idx, tgt_idx = pair
 					try:
 						src_word = src_sent.split()[int(src_idx)]
 						tgt_word = tgt_sent.split()[int(tgt_idx)]
 						# Écrire chaque paire d'alignement sur une ligne séparée
-						output_file.write(f"{src_word} <=> {tgt_word}\n")
+						output_file.write(f"{src_word} <=> {tgt_word} ({probs})\n")
 					except (IndexError, ValueError):
 						continue  # Skip invalid indices
 
@@ -249,7 +251,7 @@ def json_to_txt():
 		json_file = json.load(open(file, 'r'))
 		for _, value in json_file['alignement_id'].items():
 			alignments = value[0]
-			all_possible_pairs = list(itertools.combinations(alignments, 2))
+			all_possible_pairs = list(itertools.combinations(alignments.values(), 2))
 			all_pairs.extend(all_possible_pairs)
 
 	with open('data/lancelot/source.txt', 'w') as f:
@@ -265,8 +267,8 @@ if __name__ == "__main__":
 	tgt = 'data/tests/target.txt'
 	# src = 'data/lancelot/source.txt'
 	# tgt = 'data/lancelot/target.txt'
-	for threshold in [0.005]:
-	#for threshold in [0.001, 0.002, 0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.009, 0.01, 0.5]:
+	for threshold in [0.0001]:
+	# for threshold in [0.001, 0.002, 0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.009, 0.01, 0.5]:
 	#for threshold in [0.001, 0.002, 0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.009, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99, 1.0]:
 		alignments = align(
 			eval_data_file_src='',
@@ -276,9 +278,9 @@ if __name__ == "__main__":
 			infer_path='infer_output/',
 			model_name_or_path="models/model_labse_bibles_clean/",
 			# model_name_or_path="LaBSE/",
-			adapter_path="checkpoint-adapter/",
+			# adapter_path="checkpoint-adapter/",
 			# adapter_path=None,
-			use_components=True,
+			use_components=False,
 			tokenizer_name=None,
 			cache_dir=None,
 			keep_layer=6,
@@ -293,7 +295,7 @@ if __name__ == "__main__":
 			seed=42,
 			fp16=False,
 			local_rank=-1,
-			align_layer=24
+			align_layer=12
 		)
 		print(alignments)
 		visualize(alignments=alignments, src=src, tgt=tgt, output_file='results/result_' + str(threshold) + '.txt')
