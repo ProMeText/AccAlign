@@ -34,7 +34,7 @@ from tqdm import tqdm
 
 
 class LineByLineTextDataset(IterableDataset):
-    def __init__(self, tokenizer, file_path_src, file_path_tgt, offsets=None):
+    def __init__(self, tokenizer, file_path_src, file_path_tgt, offsets=None, format="txt"):
         assert os.path.isfile(file_path_src)
         assert os.path.isfile(file_path_tgt)
         print('Loading the dataset...')
@@ -96,9 +96,9 @@ class LineByLineTextDataset(IterableDataset):
 
 
 
-def word_align(align_layer, keep_layer ,extraction, softmax_threshold, per_gpu_train_batch_size, tokenizer, model, folder_path, src_path, tgt_path):
+def word_align(align_layer, device, keep_layer ,extraction, softmax_threshold, per_gpu_train_batch_size, tokenizer, model, folder_path, src_path, tgt_path):
 
-    device = torch.device('cuda:0')
+    device = torch.device(device)
     def collate(examples):
         ids_src, ids_tgt, bpe2word_map_src, bpe2word_map_tgt, sents_src, sents_tgt = zip(*examples)
         ids_src = pad_sequence(ids_src, batch_first=True, padding_value=tokenizer.pad_token_id)
@@ -133,7 +133,7 @@ def word_align(align_layer, keep_layer ,extraction, softmax_threshold, per_gpu_t
                     word_aligns_list_all_layer_dic[layer_id] = word_aligns_list_all_layer_dic[layer_id] + word_aligns_list_all_layer_dic_one_batch[layer_id]
 
 
-
+    # On extrait toutes les couches pour le txt mais on retourne seulement celle visée.
     for layer_id in word_aligns_list_all_layer_dic:
         with open(os.path.join(folder_path, f'{"XX2XX.align"}.{str(layer_id)}'),'w', encoding='utf-8') as writers:
             for word_aligns in word_aligns_list_all_layer_dic[layer_id]:

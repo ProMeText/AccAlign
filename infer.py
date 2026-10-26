@@ -18,6 +18,7 @@
 
 import argparse
 import glob
+import json
 import logging
 import os
 import random
@@ -65,8 +66,8 @@ def align(align_layer,
 		  infer_data_file_tgt='',
 		  output_dir_adapter='',
 		  infer_path='infer_output/',
-		  model_name_or_path="models/model_labse_bibles_clean/",
-		  adapter_path="checkpoint-adapter/",
+		  model_name_or_path=None,
+		  adapter_path=None,
 		  tokenizer_name=None,
 		  cache_dir=None,
 		  softmax_threshold=0.1,
@@ -175,64 +176,93 @@ def align(align_layer,
 		folder_path = infer_path
 		if not os.path.exists(folder_path):
 			os.makedirs(folder_path)
-		alignments = word_align(align_layer, keep_layer, extraction, softmax_threshold, per_gpu_eval_batch_size, tokenizer, model, folder_path, infer_data_file_src,
+		alignments = word_align(align_layer, device, keep_layer, extraction, softmax_threshold, per_gpu_eval_batch_size, tokenizer, model, folder_path, infer_data_file_src,
 				   infer_data_file_tgt)
 		return alignments
 
 
-def visualize(alignments, src, tgt, output_dir):
+def visualize(alignments, src, tgt, output_file):
 	with open(src, 'r', encoding='utf-8') as f:
 		src_sentences = [normalize_text(line.strip()) for line in f.readlines()]
 
 	with open(tgt, 'r', encoding='utf-8') as f:
 		tgt_sentences = [normalize_text(line.strip()) for line in f.readlines()]
-	for i, (src_sent, tgt_sent) in tqdm(enumerate(zip(src_sentences, tgt_sentences)), total=len(src_sentences)):
-		print(f"Src: {src_sent}")
-		print(f"Tgt: {tgt_sent}")
-		if i < len(alignments):
-			# Convertir les alignements en paires de mots
-			align_pairs = alignments[i]
-			for pair in align_pairs:
-				src_idx, tgt_idx = pair
-				try:
-					src_word = src_sent.split()[int(src_idx)]
-					tgt_word = tgt_sent.split()[int(tgt_idx)]
-					# Écrire chaque paire d'alignement sur une ligne séparée
-					print(f"{src_word} <=> {tgt_word}")
-				except (IndexError, ValueError):
-					continue  # Skip invalid indices
+
+	with open(output_file, "w") as output_file:
+		for i, (src_sent, tgt_sent) in tqdm(enumerate(zip(src_sentences, tgt_sentences)), total=len(src_sentences)):
+			output_file.write("\n\n---\n")
+			output_file.write(f"Src: {src_sent}\n")
+			output_file.write(f"Tgt: {tgt_sent}\n")
+			if i < len(alignments):
+				# Convertir les alignements en paires de mots
+				align_pairs = alignments[i]
+				for pair in align_pairs:
+					src_idx, tgt_idx = pair
+					try:
+						src_word = src_sent.split()[int(src_idx)]
+						tgt_word = tgt_sent.split()[int(tgt_idx)]
+						# Écrire chaque paire d'alignement sur une ligne séparée
+						output_file.write(f"{src_word} <=> {tgt_word}\n")
+					except (IndexError, ValueError):
+						continue  # Skip invalid indices
 
 
 def normalize_text(text):
-    """Normalize text by removing special characters and normalizing spaces"""
-    text = re.sub(r'[^\w\s]', '', text)  # Remove special characters
-    text = re.sub(r'\s+', ' ', text).strip()  # Normalize spaces
-    return text
+	"""Normalize text by removing special characters and normalizing spaces"""
+	text = re.sub(r'[^\w\s]', '', text)  # Remove special characters
+	text = re.sub(r'\s+', ' ', text).strip()  # Normalize spaces
+	return text
+
+def json_to_txt():
+	input_dir = "/home/mgl/Bureau/Travail/projets/alignement/alignement_multilingue/medieval-multilingual-parallel-corpus/data/*/*.json"
+	all_pairs = []
+	for file in glob.glob(input_dir):
+		print(file)
+		json_file = json.load(open(file, 'r'))
+		for _, value in json_file['alignement_id'].items():
+			alignments = value[0]
+			all_possible_pairs = list(itertools.combinations(alignments, 2))
+			all_pairs.extend(all_possible_pairs)
+
+	with open('data/lancelot/source.txt', 'w') as f:
+		for pair in all_pairs:
+			f.write(pair[0] + '\n')
+	with open('data/lancelot/target.txt', 'w') as f:
+		for pair in all_pairs:
+			f.write(pair[1] + '\n')
 
 if __name__ == "__main__":
-	alignments = align(
-		eval_data_file_src='',
-		infer_data_file_src='data/lancelot/source.txt',
-		infer_data_file_tgt='data/lancelot/target.txt',
-		output_dir_adapter='',
-		infer_path='infer_output/',
-		model_name_or_path="models/model_labse_bibles_clean/",
-		adapter_path="checkpoint-adapter/",
-		tokenizer_name=None,
-		cache_dir=None,
-		keep_layer=6,
-		block_size=-1,
-		max_len=512,
-		softmax_threshold=0.1,
-		do_eval=False,
-		do_test=True,
-		per_gpu_eval_batch_size=32,
-		no_cuda=False,
-		overwrite_output_dir=False,
-		seed=42,
-		fp16=False,
-		local_rank=-1,
-		align_layer=24
-	)
-	print(alignments)
-	visualize(alignments=alignments, src='data/lancelot/source.txt', tgt='data/lancelot/target.txt', output_dir='visualization/')
+	json_to_txt()
+	src = 'data/tests/source.txt'
+	tgt = 'data/tests/target.txt'
+	src = 'data/lancelot/source.txt'
+	tgt = 'data/lancelot/target.txt'
+	for threshold in [0.001, 0.002, 0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.009, 0.01, 0.5]:
+	#for threshold in [0.001, 0.002, 0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.009, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99, 1.0]:
+		alignments = align(
+			eval_data_file_src='',
+			infer_data_file_src=src,
+			infer_data_file_tgt=tgt,
+			output_dir_adapter='',
+			infer_path='infer_output/',
+			model_name_or_path="models/model_labse_bibles_clean/",
+			# model_name_or_path="LaBSE/",
+			adapter_path="checkpoint-adapter/",
+			tokenizer_name=None,
+			cache_dir=None,
+			keep_layer=6,
+			block_size=-1,
+			max_len=512,
+			softmax_threshold=threshold,
+			do_eval=False,
+			do_test=True,
+			per_gpu_eval_batch_size=32,
+			no_cuda=True,
+			overwrite_output_dir=False,
+			seed=42,
+			fp16=False,
+			local_rank=-1,
+			align_layer=24
+		)
+		print(alignments)
+		visualize(alignments=alignments, src=src, tgt=tgt, output_file='results/result_' + str(threshold) + '.txt')
