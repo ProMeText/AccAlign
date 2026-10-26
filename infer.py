@@ -57,29 +57,30 @@ def set_seed(seed):
 
 
 
-def main(align_layer=6,
-		 extraction='softmax',
-		eval_data_file_src='',
-		infer_data_file_src='',
-		infer_data_file_tgt='',
-		output_dir_adapter='',
-		infer_path='infer_output/',
-		model_name_or_path="models/model_labse_bibles_clean/",
-		adapter_path="checkpoint-adapter/",
-		tokenizer_name=None,
-		cache_dir=None,
-		softmax_threshold=0.1,
-		block_size=-1,
-		max_len=512,
-		do_eval=False,
-		do_test=False,
-		per_gpu_eval_batch_size=32,
-		no_cuda=False,
-		overwrite_output_dir=False,
-		seed=42,
-		fp16=False,
-		local_rank=0
-	):
+def align(align_layer,
+		  extraction='softmax',
+		  eval_data_file_src='',
+		  keep_layer=6,
+		  infer_data_file_src='',
+		  infer_data_file_tgt='',
+		  output_dir_adapter='',
+		  infer_path='infer_output/',
+		  model_name_or_path="models/model_labse_bibles_clean/",
+		  adapter_path="checkpoint-adapter/",
+		  tokenizer_name=None,
+		  cache_dir=None,
+		  softmax_threshold=0.1,
+		  block_size=-1,
+		  max_len=512,
+		  do_eval=False,
+		  do_test=False,
+		  per_gpu_eval_batch_size=32,
+		  no_cuda=False,
+		  overwrite_output_dir=False,
+		  seed=42,
+		  fp16=False,
+		  local_rank=0
+		  ):
 
 	if eval_data_file_src is None and do_eval:
 		raise ValueError(
@@ -174,12 +175,42 @@ def main(align_layer=6,
 		folder_path = infer_path
 		if not os.path.exists(folder_path):
 			os.makedirs(folder_path)
-		word_align(align_layer, extraction, softmax_threshold, per_gpu_eval_batch_size, tokenizer, model, folder_path, infer_data_file_src,
+		alignments = word_align(align_layer, keep_layer, extraction, softmax_threshold, per_gpu_eval_batch_size, tokenizer, model, folder_path, infer_data_file_src,
 				   infer_data_file_tgt)
+		return alignments
 
+
+def visualize(alignments, src, tgt, output_dir):
+	with open(src, 'r', encoding='utf-8') as f:
+		src_sentences = [normalize_text(line.strip()) for line in f.readlines()]
+
+	with open(tgt, 'r', encoding='utf-8') as f:
+		tgt_sentences = [normalize_text(line.strip()) for line in f.readlines()]
+	for i, (src_sent, tgt_sent) in tqdm(enumerate(zip(src_sentences, tgt_sentences)), total=len(src_sentences)):
+		print(f"Src: {src_sent}")
+		print(f"Tgt: {tgt_sent}")
+		if i < len(alignments):
+			# Convertir les alignements en paires de mots
+			align_pairs = alignments[i]
+			for pair in align_pairs:
+				src_idx, tgt_idx = pair
+				try:
+					src_word = src_sent.split()[int(src_idx)]
+					tgt_word = tgt_sent.split()[int(tgt_idx)]
+					# Écrire chaque paire d'alignement sur une ligne séparée
+					print(f"{src_word} <=> {tgt_word}")
+				except (IndexError, ValueError):
+					continue  # Skip invalid indices
+
+
+def normalize_text(text):
+    """Normalize text by removing special characters and normalizing spaces"""
+    text = re.sub(r'[^\w\s]', '', text)  # Remove special characters
+    text = re.sub(r'\s+', ' ', text).strip()  # Normalize spaces
+    return text
 
 if __name__ == "__main__":
-	main(
+	alignments = align(
 		eval_data_file_src='',
 		infer_data_file_src='data/lancelot/source.txt',
 		infer_data_file_tgt='data/lancelot/target.txt',
@@ -189,6 +220,7 @@ if __name__ == "__main__":
 		adapter_path="checkpoint-adapter/",
 		tokenizer_name=None,
 		cache_dir=None,
+		keep_layer=6,
 		block_size=-1,
 		max_len=512,
 		softmax_threshold=0.1,
@@ -199,5 +231,8 @@ if __name__ == "__main__":
 		overwrite_output_dir=False,
 		seed=42,
 		fp16=False,
-		local_rank=-1
-	)		
+		local_rank=-1,
+		align_layer=24
+	)
+	print(alignments)
+	visualize(alignments=alignments, src='data/lancelot/source.txt', tgt='data/lancelot/target.txt', output_dir='visualization/')

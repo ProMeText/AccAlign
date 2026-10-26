@@ -96,9 +96,9 @@ class LineByLineTextDataset(IterableDataset):
 
 
 
-def word_align(args, tokenizer, model, folder_path, src_path, tgt_path):
+def word_align(align_layer, keep_layer ,extraction, softmax_threshold, per_gpu_train_batch_size, tokenizer, model, folder_path, src_path, tgt_path):
 
-    device = torch.device('cuda:1')
+    device = torch.device('cuda:0')
     def collate(examples):
         ids_src, ids_tgt, bpe2word_map_src, bpe2word_map_tgt, sents_src, sents_tgt = zip(*examples)
         ids_src = pad_sequence(ids_src, batch_first=True, padding_value=tokenizer.pad_token_id)
@@ -108,11 +108,11 @@ def word_align(args, tokenizer, model, folder_path, src_path, tgt_path):
 
     dataset = LineByLineTextDataset(tokenizer, file_path_src=src_path, file_path_tgt=tgt_path)
     dataloader = DataLoader(
-        dataset, batch_size=args.per_gpu_train_batch_size, collate_fn=collate
+        dataset, batch_size=per_gpu_train_batch_size, collate_fn=collate
     )
 
     tqdm_iterator = trange(0, desc="Extracting")
-    model_sentence = SentenceAligner_word(args, model)
+    model_sentence = SentenceAligner_word(softmax_threshold=softmax_threshold, model=model)
 
 
     word_aligns_list_all_layer_dic = {}
@@ -122,8 +122,8 @@ def word_align(args, tokenizer, model, folder_path, src_path, tgt_path):
             ids_src, ids_tgt, bpe2word_map_src, bpe2word_map_tgt, sents_src, sents_tgt = batch
 
 
-            ids_src, ids_tgt = ids_src.to(args.device), ids_tgt.to(args.device)
-            word_aligns_list_all_layer_dic_one_batch = model_sentence.get_aligned_word(args, ids_src, ids_tgt, bpe2word_map_src, bpe2word_map_tgt, tokenizer.pad_token_id, tokenizer.cls_token_id, tokenizer.sep_token_id, output_prob = False)
+            ids_src, ids_tgt = ids_src.to(device), ids_tgt.to(device)
+            word_aligns_list_all_layer_dic_one_batch = model_sentence.get_aligned_word(align_layer, extraction, softmax_threshold, ids_src, ids_tgt, bpe2word_map_src, bpe2word_map_tgt, tokenizer.pad_token_id, tokenizer.cls_token_id, tokenizer.sep_token_id, output_prob = False)
 
             for layer_id in word_aligns_list_all_layer_dic_one_batch:
 
@@ -142,72 +142,6 @@ def word_align(args, tokenizer, model, folder_path, src_path, tgt_path):
                     if word_align[0] != -1:
                         output_str.append(f'{word_align[0]}-{word_align[1]}')
                 writers.write(' '.join(output_str) + '\n')
-
-
-# def main():
-#     parser = argparse.ArgumentParser()
-#
-#     # Required parameters
-#     parser.add_argument(
-#         "--data_file_src", default="/nfsshare/home/wangweikang/en2ces_101/output/en2Ces.src", type=str,
-#         help="The input data file (a text file)."
-#     )
-#     parser.add_argument(
-#         "--data_file_tgt", default="/nfsshare/home/wangweikang/en2ces_101/output/en2Ces.tgt", type=str,
-#         help="The input data file (a text file)."
-#     )
-#     parser.add_argument(
-#         "--output_file",
-#         default='/nfsshare/home/wangweikang/my_alignment/valid_output/full/800',
-#         type=str,
-#         help="The output file."
-#     )
-#     parser.add_argument("--align_layer", type=int, default=6, help="layer for alignment extraction")
-#     parser.add_argument(
-#         "--extraction", default='softmax', type=str, help='softmax or others'
-#     )
-#     parser.add_argument(
-#         "--softmax_threshold", type=float, default=0.1
-#     )
-#     parser.add_argument(
-#         "--output_prob_file", default=None, type=str, help='The output probability file.'
-#     )
-#     parser.add_argument(
-#         "--output_word_file", default=None, type=str, help='The output word file.'
-#     )
-#     parser.add_argument(
-#         "--model_name_or_path",
-#         default="/nfsshare/home/wangweikang/my_alignment/ckpt_output/full_fune/checkpoint-800",
-#         type=str,
-#         help="The model checkpoint for weights initialization. Leave None if you want to train a model from scratch.",
-#     )
-#     parser.add_argument(
-#         "--adapter_path",
-#         default="/nfsshare/home/wangweikang/my_alignment/ckpt_output/full_fune/checkpoint-800",
-#         type=str,
-#         help="The model checkpoint for weights initialization. Leave None if you want to train a model from scratch.",
-#     )
-#     parser.add_argument("--batch_size", default=32, type=int)
-#
-#     parser.add_argument("--no_cuda", action="store_true", help="Avoid using CUDA when available")
-#     parser.add_argument("--num_workers", type=int, default=1, help="Number of workers for data loading")
-#     parser.add_argument("--tokenizer_name_or_path", type=str, default="xlm-roberta-base")
-#     args = parser.parse_args()
-#     device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
-#     args.device = device
-#
-#
-#     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
-#     model = AutoModel.from_pretrained(args.model_name_or_path)
-#     if args.adapter_path:
-#         model.load_adapter(args.adapter_path)
-#         model.set_active_adapters('alignment_adapter')
-#
-#
-#     word_align(args, tokenizer, model, args.output_file, args.data_file_src, args.data_file_tgt)
-#
-#
-# if __name__ == "__main__":
-#     main()
-
-                    
+        if str(keep_layer) == str(layer_id):
+            corresponding_dict = word_aligns_list_all_layer_dic[layer_id]
+    return corresponding_dict

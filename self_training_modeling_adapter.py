@@ -99,7 +99,7 @@ class ModelGuideHead(nn.Module):
 
 
 class BertForSO(PreTrainedModel):
-    def __init__(self, args, config, model_adapter):
+    def __init__(self, config, model_adapter):
         super().__init__(config)
         self.model = model_adapter
         self.guide_layer = ModelGuideHead()

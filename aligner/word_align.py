@@ -30,10 +30,10 @@ def return_extended_attention_mask(attention_mask, dtype):
 
 
 class SentenceAligner_word(object):
-    def __init__(self, args, model):
+    def __init__(self, softmax_threshold, model):
 
         self.guide = None
-        self.softmax_threshold = args.softmax_threshold
+        self.softmax_threshold = softmax_threshold
         self.embed_loader = model
 
     def transpose_for_scores(self, x):
@@ -41,12 +41,13 @@ class SentenceAligner_word(object):
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
 
-    def get_subword_matrix(self, args, inputs_src, inputs_tgt, PAD_ID, CLS_ID, SEP_ID, output_prob=False):
+    def get_subword_matrix(self, align_layer, extraction, softmax_threshold, inputs_src, inputs_tgt, PAD_ID, CLS_ID, SEP_ID, output_prob=False):
 
         output_src,output_tgt = self.embed_loader(
-            inputs_src=inputs_src, inputs_tgt=inputs_tgt, attention_mask_src=(inputs_src != PAD_ID),
-            attention_mask_tgt=(inputs_tgt != PAD_ID), guide=None, align_layer=args.align_layer,
-            extraction=args.extraction, softmax_threshold=args.softmax_threshold, do_infer=True,
+            inputs_src=inputs_src, inputs_tgt=inputs_tgt, attention_mask_src=(inputs_src != PAD_ID).long(),
+            attention_mask_tgt=(inputs_tgt != PAD_ID).long(), guide=None, align_layer=align_layer,
+            extraction=extraction, softmax_threshold=softmax_threshold,
+            do_infer=True,
         )
 
         align_matrix_all_layers = {}
@@ -76,9 +77,9 @@ class SentenceAligner_word(object):
             attention_scores_src = attention_scores + attention_mask_tgt
             attention_scores_tgt = attention_scores + attention_mask_src.transpose(-1, -2)
 
-            attention_probs_src = nn.Softmax(dim=-1)(
+            attention_probs_src = nn.Softmax(dim=-1)(\
                 attention_scores_src)  # if extraction == 'softmax' else entmax15(attention_scores_src, dim=-1)
-            attention_probs_tgt = nn.Softmax(dim=-2)(
+            attention_probs_tgt = nn.Softmax(dim=-2)(\
                 attention_scores_tgt)  # if extraction == 'softmax' else entmax15(attention_scores_tgt, dim=-2)
 
             if self.guide is None:
@@ -99,10 +100,10 @@ class SentenceAligner_word(object):
 
         return align_matrix_all_layers
 
-    def get_aligned_word(self, args, inputs_src, inputs_tgt, bpe2word_map_src, bpe2word_map_tgt, PAD_ID, CLS_ID, SEP_ID,
+    def get_aligned_word(self, align_layer, extraction, softmax_threshold, inputs_src, inputs_tgt, bpe2word_map_src, bpe2word_map_tgt, PAD_ID, CLS_ID, SEP_ID,
                          output_prob=False):
 
-        attention_probs_inter_all_layers = self.get_subword_matrix(args, inputs_src, inputs_tgt, PAD_ID, CLS_ID, SEP_ID,
+        attention_probs_inter_all_layers = self.get_subword_matrix(align_layer, extraction, softmax_threshold, inputs_src, inputs_tgt, PAD_ID, CLS_ID, SEP_ID,
                                                                    output_prob)
         if output_prob:
             attention_probs_inter, alignment_probs = attention_probs_inter
